@@ -1,1 +1,7 @@
 .env
+backend/.env
+backend/clausecop.db
+backend/app/data/uploads/
+backend/app/data/logs/
+clausecop.db
+data/uploads/*
