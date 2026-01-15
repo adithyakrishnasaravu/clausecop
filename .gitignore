@@ -1,7 +1,13 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+
+# Runtime data
+backend/data/
+backend/clausecop.db
+
+# Env files
 .env
 backend/.env
-backend/clausecop.db
-backend/app/data/uploads/
-backend/app/data/logs/
-clausecop.db
-data/uploads/*
+frontend/.env
