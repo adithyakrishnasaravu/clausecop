@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import SQLModel
 
-from app.api.routes import documents
+from app.api.routes import clauses, documents
 from app.core.config import settings
 from app.db import models  # noqa: F401
 from app.db.session import engine
@@ -28,3 +28,4 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 app.include_router(documents.router)
+app.include_router(clauses.router)

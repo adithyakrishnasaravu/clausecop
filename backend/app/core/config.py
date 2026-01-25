@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-BASE_DIR = Path(__file__).resolve().parents[2] # shifts up to parent dire by two levels
+BASE_DIR = Path(__file__).resolve().parents[3] # shifts up to parent dire by two levels
 ENV_FILE = BASE_DIR / ".env"
 
 
@@ -22,6 +22,12 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    unstructured_api_url: str = Field(
+        default="https://platform.unstructuredapp.io/api/v1",
+        alias="UNSTRUCTURED_API_URL",
+    )
+    unstructured_api_key: str = Field(default="", alias="UNSTRUCTURED_API_KEY")
 
     @field_validator("cors_origins", mode="before")
     def split_origins(cls, value: str | list[str]) -> list[str]:

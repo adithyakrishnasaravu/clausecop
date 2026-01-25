@@ -14,7 +14,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.db.models import Document
 from app.db.session import get_session
-
+from app.services.ingestion.pipeline import process_doc
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 # Upload Endpoint
@@ -41,8 +41,11 @@ async def upload_document(
         status="processing",
         file_path=str(destination),
     )
-    session.add(document)
+    session.add(document) #ingestion
     session.commit()
+    session.refresh(document)
+
+    process_doc(document.id, session) # clause extraction
     session.refresh(document)
 
     return {"document_id": document.id, "status": document.status} # Return document ID and status
