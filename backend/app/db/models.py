@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
@@ -38,4 +39,24 @@ class Clause(SQLModel, table=True):
     page_end: int = Field(index=True)
 
     text: str
+
+
+class RiskAssessment(SQLModel, table=True):
+    """
+    Stores the risk analysis result for a single clause.
+    One-to-one with Clause.
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    clause_id: int = Field(foreign_key="clause.id", index=True, unique=True)
+
+    category: str = Field(index=True)              # classified clause type
+    risk_score: float = Field(index=True)           # 0-100
+    severity: str = Field(index=True)               # low / medium / high / critical
+
+    signals: str                                    # JSON-encoded dict of bool flags
+    summary: str                                    # plain-English risk explanation
+    recommendation: str                             # negotiation suggestion
+
+    assessed_by: str                                # model version used
+    assessed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

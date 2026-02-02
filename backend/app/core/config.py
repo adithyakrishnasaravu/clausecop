@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     )
     unstructured_api_key: str = Field(default="", alias="UNSTRUCTURED_API_KEY")
 
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openai_model_classify: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL_CLASSIFY")
+    openai_model_reasoning: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL_REASONING")
+
     @field_validator("cors_origins", mode="before")
     def split_origins(cls, value: str | list[str]) -> list[str]:
         if isinstance(value, str):

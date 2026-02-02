@@ -1,34 +1,78 @@
 from __future__ import annotations
 
+import json
+import logging
+
 from sqlmodel import Session, select
 
-from app.db.models import Clause, Document
+from app.db.models import Clause, Document, RiskAssessment
 from app.services.ingestion.unstructured_client import partition_pdf
 from app.services.ingestion.unstructured_to_clauses import build_clause_drafts
+from app.services.llm.client import analyze_risk, classify_clause
+from app.services.risk.scorer import compute_risk_score
+
+log = logging.getLogger(__name__)
+
+
+def _assess_clause(clause: Clause, session: Session) -> None:
+    """Classify a clause, analyse its risk, score it, and persist."""
+    # Step 1 — classify
+    classification = classify_clause(clause.text)
+    clause.category = classification.category
+    clause.confidence = classification.confidence
+    session.add(clause)
+
+    # Step 2 — risk signals
+    analysis = analyze_risk(clause.text, classification.category)
+
+    # Step 3 — numeric score
+    signals_dict = analysis.signals.to_dict()
+    score, severity = compute_risk_score(classification.category, signals_dict)
+
+    # Step 4 — persist risk assessment
+    assessment = RiskAssessment(
+        clause_id=clause.id,
+        category=classification.category,
+        risk_score=score,
+        severity=severity,
+        signals=json.dumps(signals_dict),
+        summary=analysis.summary,
+        recommendation=analysis.recommendation,
+        assessed_by=f"openai/{classification.category}",
+    )
+    session.add(assessment)
 
 
 def process_doc(doc_id: int, session: Session) -> None:
     """
-    Process a document:
-    - Parse PDF via Unstructured
-    - Convert to ClauseDrafts
-    - Store Clauses in DB
-    - Update document status
+    Process a document end-to-end:
+    1. Parse PDF via Unstructured
+    2. Convert to ClauseDrafts
+    3. Store Clauses in DB
+    4. Classify each clause and run risk analysis
+    5. Update document status
     """
     document = session.exec(select(Document).where(Document.id == doc_id)).first()
     if not document:
         raise ValueError(f"Document {doc_id} not found")
 
     try:
-        # Make re-runs idempotent during dev
+        # Make re-runs idempotent during dev — clear old clauses + assessments
         existing = session.exec(select(Clause).where(Clause.document_id == doc_id)).all()
         for c in existing:
+            old_assessment = session.exec(
+                select(RiskAssessment).where(RiskAssessment.clause_id == c.id)
+            ).first()
+            if old_assessment:
+                session.delete(old_assessment)
             session.delete(c)
         session.commit()
 
+        # --- Extraction ---
         elements = partition_pdf(document.file_path, coordinates=False)
         clause_drafts = build_clause_drafts(elements)
 
+        clauses: list[Clause] = []
         for index, draft in enumerate(clause_drafts):
             clause = Clause(
                 document_id=document.id,
@@ -42,6 +86,18 @@ def process_doc(doc_id: int, session: Session) -> None:
                 confidence=None,
             )
             session.add(clause)
+            clauses.append(clause)
+
+        # Flush so clauses get IDs assigned
+        session.flush()
+
+        # --- Risk Analysis ---
+        for clause in clauses:
+            try:
+                _assess_clause(clause, session)
+            except Exception:
+                log.exception("Risk analysis failed for clause %s", clause.id)
+                # Continue with remaining clauses — don't block the whole doc
 
         document.status = "ready"
         session.add(document)
