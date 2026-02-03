@@ -2,13 +2,51 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import select
 
-from app.db.models import Clause, RiskAssessment
+from app.db.models import Clause, Document, RiskAssessment
 from app.db.session import get_session
 
 router = APIRouter(prefix="/documents", tags=["clauses"])
+
+clause_router = APIRouter(prefix="/clauses", tags=["clauses"])
+
+
+@clause_router.get("/{clause_id}")
+def get_clause(clause_id: int, session=Depends(get_session)):
+    """Get a single clause by ID with its risk data."""
+    c = session.exec(select(Clause).where(Clause.id == clause_id)).first()
+    if not c:
+        raise HTTPException(status_code=404, detail="Clause not found")
+
+    assessment = session.exec(
+        select(RiskAssessment).where(RiskAssessment.clause_id == c.id)
+    ).first()
+
+    risk = None
+    if assessment:
+        risk = {
+            "risk_score": assessment.risk_score,
+            "severity": assessment.severity,
+            "signals": json.loads(assessment.signals),
+            "summary": assessment.summary,
+            "recommendation": assessment.recommendation,
+        }
+
+    return {
+        "id": c.id,
+        "document_id": c.document_id,
+        "clause_index": c.clause_index,
+        "section_number": c.section_number,
+        "title": c.title,
+        "category": c.category,
+        "confidence": c.confidence,
+        "page_start": c.page_start,
+        "page_end": c.page_end,
+        "text": c.text,
+        "risk": risk,
+    }
 
 
 @router.get("/{document_id}/clauses")
@@ -55,7 +93,8 @@ def list_clauses(document_id: int, session=Depends(get_session)):
 
 @router.get("/{document_id}/risk-summary")
 def risk_summary(document_id: int, session=Depends(get_session)):
-    """Document-level risk profile: overall score, severity distribution, top risks."""
+    """Document-level risk profile: overall score, severity distribution, top risks, safe clauses."""
+    doc = session.exec(select(Document).where(Document.id == document_id)).first()
     clauses = session.exec(
         select(Clause)
         .where(Clause.document_id == document_id)
@@ -105,12 +144,17 @@ def risk_summary(document_id: int, session=Depends(get_session)):
 
     top_risks = sorted(assessments, key=lambda x: x["risk_score"], reverse=True)[:5]
 
+    safe_clauses = sorted(assessments, key=lambda x: x["risk_score"])[:3]
+    safe_clauses = [a for a in safe_clauses if a["severity"] == "low"]
+
     return {
         "document_id": document_id,
+        "filename": doc.filename if doc else None,
         "total_clauses": len(clauses),
         "assessed_clauses": len(assessments),
         "overall_score": overall_score,
         "overall_severity": overall_severity,
         "severity_distribution": severity_dist,
         "top_risks": top_risks,
+        "safe_clauses": safe_clauses,
     }

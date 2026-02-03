@@ -1,4 +1,4 @@
-import type { Clause, RiskSummary, UploadResponse } from "./types";
+import type { Clause, ClauseDetail, DocumentInfo, RiskSummary, UploadResponse } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 
@@ -19,9 +19,21 @@ export async function uploadDocument(file: File): Promise<UploadResponse> {
   return res.json();
 }
 
+export async function fetchDocuments(): Promise<DocumentInfo[]> {
+  const res = await fetch(`${BASE_URL}/documents/`);
+  if (!res.ok) throw new Error("Failed to fetch documents");
+  return res.json();
+}
+
 export async function fetchClauses(documentId: number): Promise<Clause[]> {
   const res = await fetch(`${BASE_URL}/documents/${documentId}/clauses`);
   if (!res.ok) throw new Error("Failed to fetch clauses");
+  return res.json();
+}
+
+export async function fetchClause(clauseId: number): Promise<ClauseDetail> {
+  const res = await fetch(`${BASE_URL}/clauses/${clauseId}`);
+  if (!res.ok) throw new Error("Failed to fetch clause");
   return res.json();
 }
 

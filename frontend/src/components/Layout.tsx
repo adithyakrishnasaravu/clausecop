@@ -15,46 +15,28 @@ import MenuIcon from "@mui/icons-material/Menu";
 import HomeIcon from "@mui/icons-material/Home";
 import ShieldIcon from "@mui/icons-material/Shield";
 import DescriptionIcon from "@mui/icons-material/Description";
+import { fetchDocuments } from "../lib/api";
+import type { DocumentInfo } from "../lib/types";
 
 const DRAWER_WIDTH = 260;
-const STORAGE_KEY = "clausecop_documents";
-
-export interface StoredDoc {
-  id: number;
-  name: string;
-  uploadedAt: string;
-}
-
-export function getStoredDocs(): StoredDoc[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-  } catch {
-    return [];
-  }
-}
-
-export function addStoredDoc(doc: StoredDoc) {
-  const docs = getStoredDocs().filter((d) => d.id !== doc.id);
-  docs.unshift(doc);
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(docs));
-  window.dispatchEvent(new Event("clausecop_docs_updated"));
-}
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [docs, setDocs] = useState<StoredDoc[]>(getStoredDocs);
+  const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const navigate = useNavigate();
   const location = useLocation();
 
+  const loadDocs = () => {
+    fetchDocuments().then(setDocs).catch(() => {});
+  };
+
   useEffect(() => {
-    const handler = () => setDocs(getStoredDocs());
+    loadDocs();
+    // Refresh sidebar when navigating (catches new uploads)
+    const handler = () => loadDocs();
     window.addEventListener("clausecop_docs_updated", handler);
-    window.addEventListener("storage", handler);
-    return () => {
-      window.removeEventListener("clausecop_docs_updated", handler);
-      window.removeEventListener("storage", handler);
-    };
-  }, []);
+    return () => window.removeEventListener("clausecop_docs_updated", handler);
+  }, [location.pathname]);
 
   const drawer = (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -73,7 +55,7 @@ export default function Layout() {
           </ListItemIcon>
           <ListItemText
             primary="Home"
-            primaryTypographyProps={{ fontSize: "0.875rem", fontWeight: 500 }}
+            slotProps={{ primary: { fontSize: "0.875rem", fontWeight: 500 } }}
           />
         </ListItemButton>
       </List>
@@ -88,7 +70,11 @@ export default function Layout() {
             Documents
           </Typography>
           <List dense sx={{ flex: 1, overflow: "auto" }}>
-            {docs.map((doc) => (
+            {docs
+              .filter((doc, idx, arr) =>
+                arr.findIndex((d) => d.filename === doc.filename) === idx
+              )
+              .map((doc) => (
               <ListItemButton
                 key={doc.id}
                 selected={location.pathname === `/documents/${doc.id}`}
@@ -103,14 +89,10 @@ export default function Layout() {
                   <DescriptionIcon fontSize="small" sx={{ color: "text.secondary" }} />
                 </ListItemIcon>
                 <ListItemText
-                  primary={doc.name}
-                  primaryTypographyProps={{
-                    fontSize: "0.8rem",
-                    fontWeight: 500,
-                    noWrap: true,
+                  primary={doc.filename.replace(/\.pdf$/i, "")}
+                  slotProps={{
+                    primary: { fontSize: "0.8rem", fontWeight: 500, noWrap: true },
                   }}
-                  secondary={`ID: ${doc.id}`}
-                  secondaryTypographyProps={{ fontSize: "0.65rem" }}
                 />
               </ListItemButton>
             ))}

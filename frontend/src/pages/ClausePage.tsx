@@ -13,45 +13,23 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import RiskBadge from "../components/RiskBadge";
 import SignalList from "../components/SignalList";
 import { severityColor } from "../theme";
-import { fetchClauses } from "../lib/api";
-import type { Clause } from "../lib/types";
+import { fetchClause } from "../lib/api";
+import type { ClauseDetail } from "../lib/types";
 
 export default function ClausePage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [clause, setClause] = useState<Clause | null>(null);
+  const [clause, setClause] = useState<ClauseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
-    // We need to find which document this clause belongs to.
-    // For now, search through recent documents in a simple way.
-    // A dedicated endpoint would be better, but this works for MVP.
-    const clauseId = Number(id);
-    // Try documents 1-20 (pragmatic for MVP)
-    const tryDoc = async (docId: number): Promise<Clause | null> => {
-      try {
-        const clauses = await fetchClauses(docId);
-        return clauses.find((c) => c.id === clauseId) ?? null;
-      } catch {
-        return null;
-      }
-    };
-
-    (async () => {
-      setLoading(true);
-      for (let docId = 1; docId <= 20; docId++) {
-        const found = await tryDoc(docId);
-        if (found) {
-          setClause(found);
-          setLoading(false);
-          return;
-        }
-      }
-      setError("Clause not found.");
-      setLoading(false);
-    })();
+    setLoading(true);
+    fetchClause(Number(id))
+      .then(setClause)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false));
   }, [id]);
 
   if (loading) {
@@ -74,10 +52,10 @@ export default function ClausePage() {
     <Box sx={{ maxWidth: 900, mx: "auto" }}>
       <Button
         startIcon={<ArrowBackIcon />}
-        onClick={() => navigate(-1)}
+        onClick={() => navigate(`/documents/${clause.document_id}`)}
         sx={{ mb: 2 }}
       >
-        Back
+        Back to document
       </Button>
 
       {/* Header */}

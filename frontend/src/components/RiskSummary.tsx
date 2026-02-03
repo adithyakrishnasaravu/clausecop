@@ -5,7 +5,9 @@ import Typography from "@mui/material/Typography";
 import List from "@mui/material/List";
 import ListItem from "@mui/material/ListItem";
 import ListItemText from "@mui/material/ListItemText";
+import ListItemIcon from "@mui/material/ListItemIcon";
 import Divider from "@mui/material/Divider";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import {
   PieChart,
   Pie,
@@ -172,6 +174,50 @@ export default function RiskSummary({ summary }: Props) {
           </List>
         </CardContent>
       </Card>
+
+      {/* Safe clauses */}
+      {summary.safe_clauses && summary.safe_clauses.length > 0 && (
+        <Card
+          elevation={2}
+          sx={{
+            borderRadius: 3,
+            mt: 2,
+            borderLeft: `4px solid ${severityColor.low}`,
+          }}
+        >
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ color: severityColor.low }}>
+              Good to Go
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              These clauses are standard and pose minimal risk.
+            </Typography>
+            <List disablePadding>
+              {summary.safe_clauses.map((clause, idx) => (
+                <Box key={clause.clause_id}>
+                  {idx > 0 && <Divider />}
+                  <ListItem sx={{ py: 1 }}>
+                    <ListItemIcon sx={{ minWidth: 36 }}>
+                      <CheckCircleOutlineIcon sx={{ color: severityColor.low }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={
+                        <Typography variant="subtitle2" fontWeight={600}>
+                          {clause.section_number
+                            ? `§${clause.section_number}`
+                            : `#${clause.clause_index + 1}`}{" "}
+                          {clause.title ?? "Untitled"}
+                        </Typography>
+                      }
+                      secondary={clause.summary}
+                    />
+                  </ListItem>
+                </Box>
+              ))}
+            </List>
+          </CardContent>
+        </Card>
+      )}
     </Box>
   );
 }

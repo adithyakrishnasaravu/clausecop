@@ -7,7 +7,6 @@ import LinearProgress from "@mui/material/LinearProgress";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import Alert from "@mui/material/Alert";
 import { uploadDocument } from "../lib/api";
-import { addStoredDoc } from "./Layout";
 
 export default function UploadDropzone() {
   const navigate = useNavigate();
@@ -25,11 +24,7 @@ export default function UploadDropzone() {
       setUploading(true);
       try {
         const res = await uploadDocument(file);
-        addStoredDoc({
-          id: res.document_id,
-          name: file.name.replace(/\.pdf$/i, ""),
-          uploadedAt: new Date().toISOString(),
-        });
+        window.dispatchEvent(new Event("clausecop_docs_updated"));
         navigate(`/documents/${res.document_id}`);
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Upload failed");

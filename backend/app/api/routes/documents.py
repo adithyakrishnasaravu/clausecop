@@ -11,11 +11,29 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session
 
+from sqlmodel import select
+
 from app.core.config import settings
 from app.db.models import Document
 from app.db.session import get_session
 from app.services.ingestion.pipeline import process_doc
+
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+@router.get("/")
+def list_documents(session: Session = Depends(get_session)):
+    """List all uploaded documents."""
+    docs = session.exec(select(Document).order_by(Document.id.desc())).all()
+    return [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "status": d.status,
+            "num_pages": d.num_pages,
+        }
+        for d in docs
+    ]
 
 # Upload Endpoint
 @router.post("/upload")

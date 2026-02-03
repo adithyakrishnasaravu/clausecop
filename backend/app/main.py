@@ -29,3 +29,4 @@ def health() -> dict[str, str]:
 
 app.include_router(documents.router)
 app.include_router(clauses.router)
+app.include_router(clauses.clause_router)
