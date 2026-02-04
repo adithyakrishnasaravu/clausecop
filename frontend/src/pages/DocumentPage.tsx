@@ -6,11 +6,14 @@ import Skeleton from "@mui/material/Skeleton";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
+import CircularProgress from "@mui/material/CircularProgress";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
+import DownloadIcon from "@mui/icons-material/Download";
 import RiskSummaryCard from "../components/RiskSummary";
 import ClauseTable from "../components/ClauseTable";
 import Filters from "../components/Filters";
-import { fetchClauses, fetchRiskSummary } from "../lib/api";
+import { fetchClauses, fetchDocument, fetchRiskSummary } from "../lib/api";
+import { generatePDFReport } from "../lib/exportReport";
 import type { Clause, RiskSummary } from "../lib/types";
 import { severityColor } from "../theme";
 
@@ -21,6 +24,8 @@ export default function DocumentPage() {
   const [summary, setSummary] = useState<RiskSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [docStatus, setDocStatus] = useState<string | null>(null);
+  const [docError, setDocError] = useState<string | null>(null);
 
   // Filters
   const [severity, setSeverity] = useState<string | null>(null);
@@ -30,14 +35,54 @@ export default function DocumentPage() {
     if (!id) return;
     const docId = Number(id);
     setLoading(true);
-    Promise.all([fetchClauses(docId), fetchRiskSummary(docId)])
-      .then(([c, s]) => {
-        setClauses(c);
-        setSummary(s);
+
+    fetchDocument(docId)
+      .then((doc) => {
+        setDocStatus(doc.status);
+        setDocError(doc.error_message ?? null);
+
+        if (doc.status === "failed") {
+          setLoading(false);
+          return;
+        }
+        if (doc.status === "processing") {
+          setLoading(false);
+          return;
+        }
+
+        return Promise.all([fetchClauses(docId), fetchRiskSummary(docId)]).then(
+          ([c, s]) => {
+            setClauses(c);
+            setSummary(s);
+          }
+        );
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // Auto-refresh while processing
+  useEffect(() => {
+    if (docStatus !== "processing") return;
+    const timer = setInterval(() => {
+      const docId = Number(id);
+      fetchDocument(docId).then((doc) => {
+        setDocStatus(doc.status);
+        setDocError(doc.error_message ?? null);
+        if (doc.status !== "processing") {
+          clearInterval(timer);
+          // Reload full data
+          Promise.all([fetchClauses(docId), fetchRiskSummary(docId)])
+            .then(([c, s]) => {
+              setClauses(c);
+              setSummary(s);
+            })
+            .catch((err) => setError(err.message));
+        }
+      });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [docStatus, id]);
 
   const categories = useMemo(
     () => [...new Set(clauses.map((c) => c.category))].sort(),
@@ -70,6 +115,36 @@ export default function DocumentPage() {
           <Skeleton variant="rounded" height={220} />
         </Box>
         <Skeleton variant="rounded" height={400} />
+      </Box>
+    );
+  }
+
+  if (docStatus === "failed") {
+    return (
+      <Box sx={{ textAlign: "center", mt: 8 }}>
+        <Typography variant="h6" gutterBottom>
+          Processing failed
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          {docError ?? "An unknown error occurred while processing this document."}
+        </Typography>
+        <Button variant="outlined" onClick={() => navigate("/")}>
+          Go to upload
+        </Button>
+      </Box>
+    );
+  }
+
+  if (docStatus === "processing") {
+    return (
+      <Box sx={{ textAlign: "center", mt: 8 }}>
+        <CircularProgress sx={{ mb: 2 }} />
+        <Typography variant="h6" gutterBottom>
+          Analyzing contract...
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          This page will update automatically when processing is complete.
+        </Typography>
       </Box>
     );
   }
@@ -107,7 +182,7 @@ export default function DocumentPage() {
             icon={<WarningAmberIcon />}
             sx={{
               borderRadius: 2,
-              "& .MuiAlert-message": { display: "flex", alignItems: "center", gap: 1 },
+              "& .MuiAlert-message": { display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" },
             }}
           >
             <Typography variant="body2" fontWeight={600}>
@@ -140,6 +215,17 @@ export default function DocumentPage() {
           </Alert>
         )}
       </Box>
+
+      {summary && (
+        <Button
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          onClick={() => generatePDFReport(summary, clauses)}
+          sx={{ mb: 2 }}
+        >
+          Download Report
+        </Button>
+      )}
 
       {summary && <RiskSummaryCard summary={summary} />}
 

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,7 +15,7 @@ from sqlmodel import Session
 from sqlmodel import select
 
 from app.core.config import settings
-from app.db.models import Document
+from app.db.models import Clause, Document, RiskAssessment
 from app.db.session import get_session
 from app.services.ingestion.pipeline import process_doc
 
@@ -67,3 +68,52 @@ async def upload_document(
     session.refresh(document)
 
     return {"document_id": document.id, "status": document.status} # Return document ID and status
+
+
+@router.get("/{document_id}")
+def get_document(document_id: int, session: Session = Depends(get_session)):
+    """Get a single document's metadata."""
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "status": doc.status,
+        "num_pages": doc.num_pages,
+        "error_message": doc.error_message,
+    }
+
+
+@router.delete("/{document_id}")
+def delete_document(document_id: int, session: Session = Depends(get_session)):
+    """Delete a document and all associated data."""
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Delete risk assessments for all clauses of this document
+    clauses = session.exec(
+        select(Clause).where(Clause.document_id == document_id)
+    ).all()
+    clause_ids = [c.id for c in clauses]
+    if clause_ids:
+        risks = session.exec(
+            select(RiskAssessment).where(RiskAssessment.clause_id.in_(clause_ids))
+        ).all()
+        for r in risks:
+            session.delete(r)
+
+    # Delete clauses
+    for c in clauses:
+        session.delete(c)
+
+    # Delete physical file
+    if doc.file_path and os.path.exists(doc.file_path):
+        os.remove(doc.file_path)
+
+    # Delete document record
+    session.delete(doc)
+    session.commit()
+
+    return {"ok": True}

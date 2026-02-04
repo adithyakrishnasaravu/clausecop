@@ -95,7 +95,7 @@ export default function ClauseTable({ clauses }: Props) {
   const navigate = useNavigate();
 
   return (
-    <Box sx={{ width: "100%" }}>
+    <Box sx={{ width: "100%", overflowX: "auto" }}>
       <DataGrid
         rows={clauses}
         columns={columns}
@@ -108,6 +108,7 @@ export default function ClauseTable({ clauses }: Props) {
         disableRowSelectionOnClick
         autoHeight
         sx={{
+          minWidth: 840,
           border: "1px solid rgba(255,255,255,0.06)",
           borderRadius: 3,
           bgcolor: "#1a1a1a",

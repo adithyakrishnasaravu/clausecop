@@ -44,3 +44,19 @@ export async function fetchRiskSummary(
   if (!res.ok) throw new Error("Failed to fetch risk summary");
   return res.json();
 }
+
+export async function fetchDocument(documentId: number): Promise<DocumentInfo & { error_message?: string }> {
+  const res = await fetch(`${BASE_URL}/documents/${documentId}`);
+  if (!res.ok) throw new Error("Failed to fetch document");
+  return res.json();
+}
+
+export async function deleteDocument(documentId: number): Promise<void> {
+  const res = await fetch(`${BASE_URL}/documents/${documentId}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Delete failed");
+  }
+}

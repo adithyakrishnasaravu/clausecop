@@ -11,11 +11,18 @@ import ListItemText from "@mui/material/ListItemText";
 import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
+import Dialog from "@mui/material/Dialog";
+import DialogTitle from "@mui/material/DialogTitle";
+import DialogContent from "@mui/material/DialogContent";
+import DialogContentText from "@mui/material/DialogContentText";
+import DialogActions from "@mui/material/DialogActions";
+import Button from "@mui/material/Button";
 import MenuIcon from "@mui/icons-material/Menu";
 import HomeIcon from "@mui/icons-material/Home";
 import ShieldIcon from "@mui/icons-material/Shield";
 import DescriptionIcon from "@mui/icons-material/Description";
-import { fetchDocuments } from "../lib/api";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { deleteDocument, fetchDocuments } from "../lib/api";
 import type { DocumentInfo } from "../lib/types";
 
 const DRAWER_WIDTH = 260;
@@ -23,11 +30,27 @@ const DRAWER_WIDTH = 260;
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
+  const [deleteTarget, setDeleteTarget] = useState<DocumentInfo | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
   const loadDocs = () => {
     fetchDocuments().then(setDocs).catch(() => {});
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setDeleteTarget(null);
+    try {
+      await deleteDocument(id);
+      loadDocs();
+      if (location.pathname === `/documents/${id}`) {
+        navigate("/");
+      }
+    } catch {
+      // silently ignore
+    }
   };
 
   useEffect(() => {
@@ -94,6 +117,19 @@ export default function Layout() {
                     primary: { fontSize: "0.8rem", fontWeight: 500, noWrap: true },
                   }}
                 />
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteTarget(doc);
+                  }}
+                  sx={{
+                    opacity: 0.4,
+                    "&:hover": { opacity: 1, color: "error.main" },
+                  }}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
               </ListItemButton>
             ))}
           </List>
@@ -165,6 +201,22 @@ export default function Layout() {
       >
         <Outlet />
       </Box>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
+        <DialogTitle>Delete document?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            "{deleteTarget?.filename}" and all its clauses and risk data will be permanently deleted.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
