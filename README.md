@@ -78,7 +78,7 @@ npm install
 npm run dev
 ```
 
-The app will be available at [https://clausecop-beta.vercel.app](https://clausecop-beta.vercel.app).
+Check it out here: [https://clausecop-beta.vercel.app](https://clausecop-beta.vercel.app).
 
 ## API
 
