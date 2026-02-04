@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
 import AppBar from "@mui/material/AppBar";
 import Box from "@mui/material/Box";
@@ -22,7 +22,8 @@ import HomeIcon from "@mui/icons-material/Home";
 import ShieldIcon from "@mui/icons-material/Shield";
 import DescriptionIcon from "@mui/icons-material/Description";
 import DeleteIcon from "@mui/icons-material/Delete";
-import { deleteDocument, fetchDocuments } from "../lib/api";
+import TextField from "@mui/material/TextField";
+import { deleteDocument, fetchDocuments, renameDocument } from "../lib/api";
 import type { DocumentInfo } from "../lib/types";
 
 const DRAWER_WIDTH = 260;
@@ -31,6 +32,9 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const [deleteTarget, setDeleteTarget] = useState<DocumentInfo | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const editRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -51,6 +55,30 @@ export default function Layout() {
     } catch {
       // silently ignore
     }
+  };
+
+  const startEditing = (doc: DocumentInfo) => {
+    setEditingId(doc.id);
+    setEditValue((doc.display_name ?? doc.filename).replace(/\.pdf$/i, ""));
+    setTimeout(() => editRef.current?.focus(), 0);
+  };
+
+  const commitRename = async () => {
+    if (editingId === null) return;
+    const trimmed = editValue.trim();
+    if (trimmed) {
+      try {
+        await renameDocument(editingId, trimmed);
+        loadDocs();
+      } catch {
+        // silently ignore
+      }
+    }
+    setEditingId(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingId(null);
   };
 
   useEffect(() => {
@@ -102,6 +130,10 @@ export default function Layout() {
                 key={doc.id}
                 selected={location.pathname === `/documents/${doc.id}`}
                 onClick={() => navigate(`/documents/${doc.id}`)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  startEditing(doc);
+                }}
                 sx={{
                   borderRadius: 2,
                   mx: 1,
@@ -111,12 +143,32 @@ export default function Layout() {
                 <ListItemIcon sx={{ minWidth: 32 }}>
                   <DescriptionIcon fontSize="small" sx={{ color: "text.secondary" }} />
                 </ListItemIcon>
-                <ListItemText
-                  primary={doc.filename.replace(/\.pdf$/i, "")}
-                  slotProps={{
-                    primary: { fontSize: "0.8rem", fontWeight: 500, noWrap: true },
-                  }}
-                />
+                {editingId === doc.id ? (
+                  <TextField
+                    inputRef={editRef}
+                    value={editValue}
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") cancelEditing();
+                    }}
+                    onBlur={commitRename}
+                    onClick={(e) => e.stopPropagation()}
+                    size="small"
+                    variant="standard"
+                    sx={{
+                      flex: 1,
+                      "& .MuiInput-input": { fontSize: "0.8rem", fontWeight: 500, py: 0 },
+                    }}
+                  />
+                ) : (
+                  <ListItemText
+                    primary={(doc.display_name ?? doc.filename).replace(/\.pdf$/i, "")}
+                    slotProps={{
+                      primary: { fontSize: "0.8rem", fontWeight: 500, noWrap: true },
+                    }}
+                  />
+                )}
                 <IconButton
                   size="small"
                   onClick={(e) => {
@@ -207,7 +259,7 @@ export default function Layout() {
         <DialogTitle>Delete document?</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            "{deleteTarget?.filename}" and all its clauses and risk data will be permanently deleted.
+            "{deleteTarget?.display_name ?? deleteTarget?.filename}" and all its clauses and risk data will be permanently deleted.
           </DialogContentText>
         </DialogContent>
         <DialogActions>

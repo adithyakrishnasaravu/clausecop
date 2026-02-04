@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
 from sqlmodel import Session
 
 from sqlmodel import select
@@ -30,6 +30,7 @@ def list_documents(session: Session = Depends(get_session)):
         {
             "id": d.id,
             "filename": d.filename,
+            "display_name": d.display_name,
             "status": d.status,
             "num_pages": d.num_pages,
         }
@@ -79,6 +80,7 @@ def get_document(document_id: int, session: Session = Depends(get_session)):
     return {
         "id": doc.id,
         "filename": doc.filename,
+        "display_name": doc.display_name,
         "status": doc.status,
         "num_pages": doc.num_pages,
         "error_message": doc.error_message,
@@ -117,3 +119,26 @@ def delete_document(document_id: int, session: Session = Depends(get_session)):
     session.commit()
 
     return {"ok": True}
+
+
+@router.patch("/{document_id}")
+def rename_document(
+    document_id: int,
+    display_name: str = Body(..., embed=True),
+    session: Session = Depends(get_session),
+):
+    """Update a document's display name."""
+    doc = session.get(Document, document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    doc.display_name = display_name or None
+    session.add(doc)
+    session.commit()
+    session.refresh(doc)
+    return {
+        "id": doc.id,
+        "filename": doc.filename,
+        "display_name": doc.display_name,
+        "status": doc.status,
+        "num_pages": doc.num_pages,
+    }

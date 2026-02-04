@@ -19,6 +19,7 @@ class Document(SQLModel, table=True):
     file_path: str
     num_pages: Optional[int] = Field(default=None)
     error_message: Optional[str] = Field(default=None)
+    display_name: Optional[str] = Field(default=None)
 
 
 # definition of a Clause model in the database

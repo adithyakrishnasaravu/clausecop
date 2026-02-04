@@ -5,7 +5,7 @@ import type { Clause, RiskSummary } from "./types";
 export function generatePDFReport(summary: RiskSummary, clauses: Clause[]) {
   const doc = new jsPDF();
   const filename =
-    summary.filename?.replace(/\.pdf$/i, "") ?? `Document #${summary.document_id}`;
+    summary.display_name ?? summary.filename?.replace(/\.pdf$/i, "") ?? `Document #${summary.document_id}`;
 
   // Title
   doc.setFontSize(22);

@@ -165,7 +165,7 @@ export default function DocumentPage() {
     );
   }
 
-  const docName = summary?.filename?.replace(/\.pdf$/i, "") ?? `Document #${id}`;
+  const docName = summary?.display_name ?? summary?.filename?.replace(/\.pdf$/i, "") ?? `Document #${id}`;
 
   return (
     <Box>

@@ -51,6 +51,18 @@ export async function fetchDocument(documentId: number): Promise<DocumentInfo & 
   return res.json();
 }
 
+export async function renameDocument(documentId: number, displayName: string): Promise<void> {
+  const res = await fetch(`${BASE_URL}/documents/${documentId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ display_name: displayName }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Rename failed");
+  }
+}
+
 export async function deleteDocument(documentId: number): Promise<void> {
   const res = await fetch(`${BASE_URL}/documents/${documentId}`, {
     method: "DELETE",

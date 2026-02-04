@@ -49,6 +49,7 @@ export interface TopRisk {
 export interface RiskSummary {
   document_id: number;
   filename: string | null;
+  display_name: string | null;
   total_clauses: number;
   assessed_clauses: number;
   overall_score: number;
@@ -66,6 +67,7 @@ export interface RiskSummary {
 export interface DocumentInfo {
   id: number;
   filename: string;
+  display_name: string | null;
   status: string;
   num_pages: number | null;
 }

@@ -150,6 +150,7 @@ def risk_summary(document_id: int, session=Depends(get_session)):
     return {
         "document_id": document_id,
         "filename": doc.filename if doc else None,
+        "display_name": doc.display_name if doc else None,
         "total_clauses": len(clauses),
         "assessed_clauses": len(assessments),
         "overall_score": overall_score,
