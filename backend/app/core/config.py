@@ -15,7 +15,7 @@ ENV_FILE = BASE_DIR / ".env"
 class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./clausecop.db", alias="DATABASE_URL")
     upload_dir: str = Field(default="./data/uploads", alias="UPLOAD_DIR")
-    cors_origins: list[str] = Field(default=["http://localhost:3000"], alias="CORS_ORIGINS")
+    cors_origins: list[str] = Field(default=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:5173"], alias="CORS_ORIGINS")
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),
@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
     openai_model_classify: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL_CLASSIFY")
     openai_model_reasoning: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL_REASONING")
+    openai_model_qa: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL_QA")
+    openai_embedding_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBEDDING_MODEL")
+
+    pinecone_api_key: str = Field(default="", alias="PINECONE_API_KEY")
+    pinecone_index_name: str = Field(default="clausecop-clauses", alias="PINECONE_INDEX_NAME")
+    pinecone_namespace: str = Field(default="default", alias="PINECONE_NAMESPACE")
 
     @field_validator("cors_origins", mode="before")
     def split_origins(cls, value: str | list[str]) -> list[str]:

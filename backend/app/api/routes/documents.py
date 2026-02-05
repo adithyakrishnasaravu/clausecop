@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from sqlmodel import select
@@ -18,6 +19,7 @@ from app.core.config import settings
 from app.db.models import Clause, Document, RiskAssessment
 from app.db.session import get_session
 from app.services.ingestion.pipeline import process_doc
+from app.services.retrieval.pinecone_index import delete_by_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -29,6 +31,7 @@ def list_documents(session: Session = Depends(get_session)):
     return [
         {
             "id": d.id,
+            "project_id": d.project_id,
             "filename": d.filename,
             "display_name": d.display_name,
             "status": d.status,
@@ -41,6 +44,7 @@ def list_documents(session: Session = Depends(get_session)):
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    project_id: Optional[int] = Form(default=None),
     session: Session = Depends(get_session),
 ):
     if file.content_type != "application/pdf":
@@ -60,15 +64,16 @@ async def upload_document(
         filename=file.filename or filename,
         status="processing",
         file_path=str(destination),
+        project_id=project_id,
     )
     session.add(document) #ingestion
     session.commit()
     session.refresh(document)
 
-    process_doc(document.id, session) # clause extraction
+    process_doc(document.id, session)
     session.refresh(document)
 
-    return {"document_id": document.id, "status": document.status} # Return document ID and status
+    return {"document_id": document.id, "status": document.status}
 
 
 @router.get("/{document_id}")
@@ -93,6 +98,12 @@ def delete_document(document_id: int, session: Session = Depends(get_session)):
     doc = session.get(Document, document_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
+
+    # Clean up Pinecone vectors
+    try:
+        delete_by_document(document_id)
+    except Exception:
+        pass  # non-blocking
 
     # Delete risk assessments for all clauses of this document
     clauses = session.exec(

@@ -9,12 +9,13 @@ from app.db.models import Clause, Document, RiskAssessment
 from app.services.ingestion.unstructured_client import partition_pdf
 from app.services.ingestion.unstructured_to_clauses import build_clause_drafts
 from app.services.llm.client import analyze_risk, classify_clause
+from app.services.retrieval.pinecone_index import delete_by_document, upsert_clause
 from app.services.risk.scorer import compute_risk_score
 
 log = logging.getLogger(__name__)
 
 
-def _assess_clause(clause: Clause, session: Session) -> None:
+def _assess_clause(clause: Clause, session: Session, project_id: int | None = None) -> None:
     """Classify a clause, analyse its risk, score it, and persist."""
     # Step 1 — classify
     classification = classify_clause(clause.text)
@@ -42,6 +43,20 @@ def _assess_clause(clause: Clause, session: Session) -> None:
     )
     session.add(assessment)
 
+    # Step 5 — embed and upsert to Pinecone
+    try:
+        upsert_clause(
+            clause_id=clause.id,
+            document_id=clause.document_id,
+            text=clause.text,
+            category=classification.category,
+            risk_score=score,
+            severity=severity,
+            project_id=project_id,
+        )
+    except Exception:
+        log.exception("Pinecone upsert failed for clause %s (non-blocking)", clause.id)
+
 
 def process_doc(doc_id: int, session: Session) -> None:
     """
@@ -57,7 +72,12 @@ def process_doc(doc_id: int, session: Session) -> None:
         raise ValueError(f"Document {doc_id} not found")
 
     try:
-        # Make re-runs idempotent during dev — clear old clauses + assessments
+        # Make re-runs idempotent during dev — clear old clauses + assessments + vectors
+        try:
+            delete_by_document(doc_id)
+        except Exception:
+            log.exception("Pinecone cleanup failed for document %d (non-blocking)", doc_id)
+
         existing = session.exec(select(Clause).where(Clause.document_id == doc_id)).all()
         for c in existing:
             old_assessment = session.exec(
@@ -94,7 +114,7 @@ def process_doc(doc_id: int, session: Session) -> None:
         # --- Risk Analysis ---
         for clause in clauses:
             try:
-                _assess_clause(clause, session)
+                _assess_clause(clause, session, project_id=document.project_id)
             except Exception:
                 log.exception("Risk analysis failed for clause %s", clause.id)
                 # Continue with remaining clauses — don't block the whole doc

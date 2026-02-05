@@ -70,6 +70,37 @@ export interface DocumentInfo {
   display_name: string | null;
   status: string;
   num_pages: number | null;
+  project_id: number | null;
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  created_at: string;
+  document_count: number;
+}
+
+export interface ProjectDetail {
+  id: number;
+  name: string;
+  created_at: string;
+  documents: DocumentInfo[];
+}
+
+export interface SearchResult {
+  clause_id: number;
+  document_id: number;
+  project_id: number | null;
+  score: number;
+  category: string;
+  text: string;
+  risk_score: number | null;
+  severity: string | null;
+}
+
+export interface QAResponse {
+  answer: string;
+  sources: SearchResult[];
 }
 
 export interface ClauseDetail extends Clause {

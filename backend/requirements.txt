@@ -6,3 +6,4 @@ python-multipart
 pdfplumber
 requests
 openai
+pinecone

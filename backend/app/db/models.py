@@ -5,6 +5,14 @@ from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
+
+class Project(SQLModel, table=True):
+    """A deal / engagement containing one or more related documents."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str = Field(index=True)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
 # definition of the Document model in the database
 class Document(SQLModel, table=True):
     """
@@ -14,6 +22,7 @@ class Document(SQLModel, table=True):
     - gives "current status" of pipeline processing
     """
     id: Optional[int] = Field(default=None, primary_key=True)
+    project_id: Optional[int] = Field(default=None, foreign_key="project.id", index=True)
     filename: str
     status: str
     file_path: str

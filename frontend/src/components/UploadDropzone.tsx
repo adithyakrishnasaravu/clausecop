@@ -8,7 +8,11 @@ import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import Alert from "@mui/material/Alert";
 import { uploadDocument } from "../lib/api";
 
-export default function UploadDropzone() {
+interface UploadDropzoneProps {
+  projectId?: number;
+}
+
+export default function UploadDropzone({ projectId }: UploadDropzoneProps = {}) {
   const navigate = useNavigate();
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -23,7 +27,7 @@ export default function UploadDropzone() {
       setError(null);
       setUploading(true);
       try {
-        const res = await uploadDocument(file);
+        const res = await uploadDocument(file, projectId);
         window.dispatchEvent(new Event("clausecop_docs_updated"));
         navigate(`/documents/${res.document_id}`);
       } catch (err: unknown) {
@@ -32,7 +36,7 @@ export default function UploadDropzone() {
         setUploading(false);
       }
     },
-    [navigate]
+    [navigate, projectId]
   );
 
   const onDrop = useCallback(
