@@ -37,6 +37,19 @@ def _get_index():
     return _index
 
 
+def generate_embeddings_batch(texts: list[str]) -> list[list[float]]:
+    """Generate embedding vectors for a list of texts in a single API call."""
+    if not texts:
+        return []
+    response = _get_openai().embeddings.create(
+        model=settings.openai_embedding_model,
+        input=texts,
+    )
+    # Sort by index to ensure correct ordering
+    sorted_data = sorted(response.data, key=lambda d: d.index)
+    return [d.embedding for d in sorted_data]
+
+
 def generate_embedding(text: str) -> list[float]:
     """Generate an embedding vector for a text string."""
     response = _get_openai().embeddings.create(
@@ -127,6 +140,38 @@ def query_similar(
         })
 
     return matches
+
+
+def upsert_clauses_batch(clauses_data: list[dict]) -> None:
+    """Batch upsert clause vectors into Pinecone (chunks of 100)."""
+    if not clauses_data:
+        return
+    index = _get_index()
+    # Build vectors list
+    vectors = []
+    for item in clauses_data:
+        metadata = {
+            "clause_id": item["clause_id"],
+            "document_id": item["document_id"],
+            "category": item["category"],
+            "text": item["text"][:1000],
+        }
+        if item.get("project_id") is not None:
+            metadata["project_id"] = item["project_id"]
+        if item.get("risk_score") is not None:
+            metadata["risk_score"] = item["risk_score"]
+        if item.get("severity") is not None:
+            metadata["severity"] = item["severity"]
+        vectors.append({
+            "id": f"clause-{item['clause_id']}",
+            "values": item["embedding"],
+            "metadata": metadata,
+        })
+    # Upsert in chunks of 100
+    for i in range(0, len(vectors), 100):
+        chunk = vectors[i : i + 100]
+        index.upsert(vectors=chunk, namespace=settings.pinecone_namespace)
+    log.info("Batch upserted %d clauses to Pinecone", len(vectors))
 
 
 def delete_by_document(document_id: int) -> None:

@@ -89,6 +89,8 @@ def get_document(document_id: int, session: Session = Depends(get_session)):
         "status": doc.status,
         "num_pages": doc.num_pages,
         "error_message": doc.error_message,
+        "total_clauses": doc.total_clauses,
+        "clauses_done": doc.clauses_done,
     }
 
 

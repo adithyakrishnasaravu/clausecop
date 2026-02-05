@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
+from typing import Optional
 
 from sqlmodel import Session, select
 
@@ -9,10 +13,73 @@ from app.db.models import Clause, Document, RiskAssessment
 from app.services.ingestion.unstructured_client import partition_pdf
 from app.services.ingestion.unstructured_to_clauses import build_clause_drafts
 from app.services.llm.client import analyze_risk, classify_clause
-from app.services.retrieval.pinecone_index import delete_by_document, upsert_clause
+from app.services.retrieval.pinecone_index import (
+    delete_by_document,
+    generate_embeddings_batch,
+    upsert_clauses_batch,
+)
 from app.services.risk.scorer import compute_risk_score
 
 log = logging.getLogger(__name__)
+
+_progress_lock = threading.Lock()
+
+
+@dataclass
+class _ClauseAnalysis:
+    """Pure data holder for per-clause analysis results (no DB interaction)."""
+    clause_id: int
+    category: str
+    confidence: float
+    risk_score: float
+    severity: str
+    signals_dict: dict
+    summary: str
+    recommendation: str
+    assessed_by: str
+    text: str
+    document_id: int
+    project_id: Optional[int]
+
+
+def _analyze_clause_pure(
+    clause_id: int,
+    text: str,
+    document_id: int,
+    project_id: int | None,
+) -> _ClauseAnalysis:
+    """Run classify + risk analysis + scoring. Pure function — no DB interaction."""
+    classification = classify_clause(text)
+    analysis = analyze_risk(text, classification.category)
+    signals_dict = analysis.signals.to_dict()
+    score, severity = compute_risk_score(classification.category, signals_dict)
+    return _ClauseAnalysis(
+        clause_id=clause_id,
+        category=classification.category,
+        confidence=classification.confidence,
+        risk_score=score,
+        severity=severity,
+        signals_dict=signals_dict,
+        summary=analysis.summary,
+        recommendation=analysis.recommendation,
+        assessed_by=f"openai/{classification.category}",
+        text=text,
+        document_id=document_id,
+        project_id=project_id,
+    )
+
+
+def _update_progress(doc_id: int, clauses_done: int) -> None:
+    """Write progress to DB using a dedicated short-lived session."""
+    from app.db.session import engine
+
+    with _progress_lock:
+        with Session(engine) as session:
+            doc = session.get(Document, doc_id)
+            if doc:
+                doc.clauses_done = clauses_done
+                session.add(doc)
+                session.commit()
 
 
 def process_doc_background(doc_id: int) -> None:
@@ -23,57 +90,15 @@ def process_doc_background(doc_id: int) -> None:
         process_doc(doc_id, session)
 
 
-def _assess_clause(clause: Clause, session: Session, project_id: int | None = None) -> None:
-    """Classify a clause, analyse its risk, score it, and persist."""
-    # Step 1 — classify
-    classification = classify_clause(clause.text)
-    clause.category = classification.category
-    clause.confidence = classification.confidence
-    session.add(clause)
-
-    # Step 2 — risk signals
-    analysis = analyze_risk(clause.text, classification.category)
-
-    # Step 3 — numeric score
-    signals_dict = analysis.signals.to_dict()
-    score, severity = compute_risk_score(classification.category, signals_dict)
-
-    # Step 4 — persist risk assessment
-    assessment = RiskAssessment(
-        clause_id=clause.id,
-        category=classification.category,
-        risk_score=score,
-        severity=severity,
-        signals=json.dumps(signals_dict),
-        summary=analysis.summary,
-        recommendation=analysis.recommendation,
-        assessed_by=f"openai/{classification.category}",
-    )
-    session.add(assessment)
-
-    # Step 5 — embed and upsert to Pinecone
-    try:
-        upsert_clause(
-            clause_id=clause.id,
-            document_id=clause.document_id,
-            text=clause.text,
-            category=classification.category,
-            risk_score=score,
-            severity=severity,
-            project_id=project_id,
-        )
-    except Exception:
-        log.exception("Pinecone upsert failed for clause %s (non-blocking)", clause.id)
-
-
 def process_doc(doc_id: int, session: Session) -> None:
     """
     Process a document end-to-end:
     1. Parse PDF via Unstructured
     2. Convert to ClauseDrafts
     3. Store Clauses in DB
-    4. Classify each clause and run risk analysis
-    5. Update document status
+    4. Classify each clause and run risk analysis (parallel)
+    5. Batch embed and upsert to Pinecone
+    6. Update document status
     """
     document = session.exec(select(Document).where(Document.id == doc_id)).first()
     if not document:
@@ -119,13 +144,84 @@ def process_doc(doc_id: int, session: Session) -> None:
         # Flush so clauses get IDs assigned
         session.flush()
 
-        # --- Risk Analysis ---
-        for clause in clauses:
+        # Set progress tracking fields
+        document.total_clauses = len(clauses)
+        document.clauses_done = 0
+        session.add(document)
+        session.commit()
+
+        # --- Phase 1: Parallel Risk Analysis ---
+        analyses: list[_ClauseAnalysis] = []
+        done_count = 0
+
+        def _worker(clause: Clause) -> _ClauseAnalysis | None:
+            nonlocal done_count
             try:
-                _assess_clause(clause, session, project_id=document.project_id)
+                result = _analyze_clause_pure(
+                    clause_id=clause.id,
+                    text=clause.text,
+                    document_id=clause.document_id,
+                    project_id=document.project_id,
+                )
+                return result
             except Exception:
                 log.exception("Risk analysis failed for clause %s", clause.id)
-                # Continue with remaining clauses — don't block the whole doc
+                return None
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {executor.submit(_worker, c): c for c in clauses}
+            for future in as_completed(futures):
+                result = future.result()
+                if result is not None:
+                    analyses.append(result)
+                done_count += 1
+                _update_progress(doc_id, done_count)
+
+        # --- Persist all clause updates + RiskAssessments in one commit ---
+        # Re-fetch clauses in current session to update them
+        clause_map = {c.id: c for c in clauses}
+        for analysis in analyses:
+            clause = clause_map.get(analysis.clause_id)
+            if clause:
+                clause.category = analysis.category
+                clause.confidence = analysis.confidence
+                session.add(clause)
+
+            assessment = RiskAssessment(
+                clause_id=analysis.clause_id,
+                category=analysis.category,
+                risk_score=analysis.risk_score,
+                severity=analysis.severity,
+                signals=json.dumps(analysis.signals_dict),
+                summary=analysis.summary,
+                recommendation=analysis.recommendation,
+                assessed_by=analysis.assessed_by,
+            )
+            session.add(assessment)
+
+        session.commit()
+
+        # --- Phase 2: Batch embed and upsert to Pinecone ---
+        try:
+            texts = [a.text for a in analyses]
+            embeddings = generate_embeddings_batch(texts)
+
+            batch_data = []
+            for analysis, embedding in zip(analyses, embeddings):
+                batch_data.append({
+                    "clause_id": analysis.clause_id,
+                    "document_id": analysis.document_id,
+                    "text": analysis.text,
+                    "category": analysis.category,
+                    "risk_score": analysis.risk_score,
+                    "severity": analysis.severity,
+                    "project_id": analysis.project_id,
+                    "embedding": embedding,
+                })
+
+            upsert_clauses_batch(batch_data)
+        except Exception:
+            log.exception("Batch Pinecone upsert failed for document %d (non-blocking)", doc_id)
 
         document.status = "ready"
         session.add(document)

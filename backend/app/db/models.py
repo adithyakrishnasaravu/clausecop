@@ -29,6 +29,8 @@ class Document(SQLModel, table=True):
     num_pages: Optional[int] = Field(default=None)
     error_message: Optional[str] = Field(default=None)
     display_name: Optional[str] = Field(default=None)
+    total_clauses: Optional[int] = Field(default=None)
+    clauses_done: Optional[int] = Field(default=None)
 
 
 # definition of a Clause model in the database

@@ -23,6 +23,17 @@ app.add_middleware(
 def on_startup() -> None:
     SQLModel.metadata.create_all(engine)
 
+    # Add progress columns to existing DBs (no-op if they already exist)
+    import sqlalchemy
+    with engine.connect() as conn:
+        inspector = sqlalchemy.inspect(engine)
+        existing = {c["name"] for c in inspector.get_columns("document")}
+        if "total_clauses" not in existing:
+            conn.execute(sqlalchemy.text("ALTER TABLE document ADD COLUMN total_clauses INTEGER"))
+        if "clauses_done" not in existing:
+            conn.execute(sqlalchemy.text("ALTER TABLE document ADD COLUMN clauses_done INTEGER"))
+        conn.commit()
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}

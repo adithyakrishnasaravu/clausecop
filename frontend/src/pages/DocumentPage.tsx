@@ -7,6 +7,7 @@ import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
 import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
+import LinearProgress from "@mui/material/LinearProgress";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
 import DownloadIcon from "@mui/icons-material/Download";
 import RiskSummaryCard from "../components/RiskSummary";
@@ -26,6 +27,8 @@ export default function DocumentPage() {
   const [error, setError] = useState<string | null>(null);
   const [docStatus, setDocStatus] = useState<string | null>(null);
   const [docError, setDocError] = useState<string | null>(null);
+  const [totalClauses, setTotalClauses] = useState<number | null>(null);
+  const [clausesDone, setClausesDone] = useState<number | null>(null);
 
   // Filters
   const [severity, setSeverity] = useState<string | null>(null);
@@ -40,6 +43,8 @@ export default function DocumentPage() {
       .then((doc) => {
         setDocStatus(doc.status);
         setDocError(doc.error_message ?? null);
+        setTotalClauses(doc.total_clauses ?? null);
+        setClausesDone(doc.clauses_done ?? null);
 
         if (doc.status === "failed") {
           setLoading(false);
@@ -69,6 +74,8 @@ export default function DocumentPage() {
       fetchDocument(docId).then((doc) => {
         setDocStatus(doc.status);
         setDocError(doc.error_message ?? null);
+        setTotalClauses(doc.total_clauses ?? null);
+        setClausesDone(doc.clauses_done ?? null);
         if (doc.status !== "processing") {
           clearInterval(timer);
           // Reload full data
@@ -136,12 +143,32 @@ export default function DocumentPage() {
   }
 
   if (docStatus === "processing") {
+    const hasProgress = totalClauses != null && totalClauses > 0;
+    const progressPercent = hasProgress
+      ? Math.round(((clausesDone ?? 0) / totalClauses!) * 100)
+      : 0;
+
     return (
-      <Box sx={{ textAlign: "center", mt: 8 }}>
-        <CircularProgress sx={{ mb: 2 }} />
-        <Typography variant="h6" gutterBottom>
-          Analyzing contract...
-        </Typography>
+      <Box sx={{ textAlign: "center", mt: 8, maxWidth: 400, mx: "auto" }}>
+        {hasProgress ? (
+          <>
+            <LinearProgress
+              variant="determinate"
+              value={progressPercent}
+              sx={{ mb: 2, height: 8, borderRadius: 4 }}
+            />
+            <Typography variant="h6" gutterBottom>
+              Analyzing clauses… {clausesDone ?? 0} / {totalClauses}
+            </Typography>
+          </>
+        ) : (
+          <>
+            <CircularProgress sx={{ mb: 2 }} />
+            <Typography variant="h6" gutterBottom>
+              Extracting clauses…
+            </Typography>
+          </>
+        )}
         <Typography variant="body2" color="text.secondary">
           This page will update automatically when processing is complete.
         </Typography>

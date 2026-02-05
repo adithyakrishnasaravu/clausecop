@@ -71,6 +71,8 @@ export interface DocumentInfo {
   status: string;
   num_pages: number | null;
   project_id: number | null;
+  total_clauses: number | null;
+  clauses_done: number | null;
 }
 
 export interface Project {
