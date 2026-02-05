@@ -15,6 +15,14 @@ from app.services.risk.scorer import compute_risk_score
 log = logging.getLogger(__name__)
 
 
+def process_doc_background(doc_id: int) -> None:
+    """Wrapper that creates its own DB session for use in background tasks."""
+    from app.db.session import engine
+
+    with Session(engine) as session:
+        process_doc(doc_id, session)
+
+
 def _assess_clause(clause: Clause, session: Session, project_id: int | None = None) -> None:
     """Classify a clause, analyse its risk, score it, and persist."""
     # Step 1 — classify

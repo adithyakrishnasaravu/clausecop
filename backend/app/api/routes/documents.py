@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Body, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import Session
 
 from sqlmodel import select
@@ -18,7 +18,7 @@ from sqlmodel import select
 from app.core.config import settings
 from app.db.models import Clause, Document, RiskAssessment
 from app.db.session import get_session
-from app.services.ingestion.pipeline import process_doc
+from app.services.ingestion.pipeline import process_doc_background
 from app.services.retrieval.pinecone_index import delete_by_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -45,6 +45,7 @@ def list_documents(session: Session = Depends(get_session)):
 async def upload_document(
     file: UploadFile = File(...),
     project_id: Optional[int] = Form(default=None),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     session: Session = Depends(get_session),
 ):
     if file.content_type != "application/pdf":
@@ -70,10 +71,9 @@ async def upload_document(
     session.commit()
     session.refresh(document)
 
-    process_doc(document.id, session)
-    session.refresh(document)
+    background_tasks.add_task(process_doc_background, document.id)
 
-    return {"document_id": document.id, "status": document.status}
+    return {"document_id": document.id, "status": "processing"}
 
 
 @router.get("/{document_id}")
