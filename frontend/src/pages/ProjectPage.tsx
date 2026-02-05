@@ -49,11 +49,27 @@ export default function ProjectPage() {
   const [editValue, setEditValue] = useState("");
   const editRef = useRef<HTMLInputElement>(null);
 
-  // Q&A
+  // Q&A — persist in sessionStorage per project
+  const qaStorageKey = `clausecop_qa_${projectId}`;
   const [question, setQuestion] = useState("");
   const [qaLoading, setQaLoading] = useState(false);
-  const [qaHistory, setQaHistory] = useState<QAEntry[]>([]);
+  const [qaHistory, setQaHistory] = useState<QAEntry[]>(() => {
+    try {
+      const saved = sessionStorage.getItem(qaStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved) as QAEntry[];
+        return parsed.map((e) => ({ ...e, expanded: false }));
+      }
+    } catch { /* ignore */ }
+    return [];
+  });
   const [qaError, setQaError] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(qaStorageKey, JSON.stringify(qaHistory));
+    } catch { /* ignore */ }
+  }, [qaHistory, qaStorageKey]);
 
   const load = useCallback((initial = false) => {
     if (initial) setLoading(true);
