@@ -53,19 +53,31 @@ export default function ProjectPage() {
   const qaStorageKey = `clausecop_qa_${projectId}`;
   const [question, setQuestion] = useState("");
   const [qaLoading, setQaLoading] = useState(false);
-  const [qaHistory, setQaHistory] = useState<QAEntry[]>(() => {
+  const [qaHistory, setQaHistory] = useState<QAEntry[]>([]);
+  const [qaError, setQaError] = useState<string | null>(null);
+  const qaInitialized = useRef(false);
+
+  // Load Q&A history when project changes
+  useEffect(() => {
+    qaInitialized.current = false;
     try {
       const saved = sessionStorage.getItem(qaStorageKey);
       if (saved) {
         const parsed = JSON.parse(saved) as QAEntry[];
-        return parsed.map((e) => ({ ...e, expanded: false }));
+        setQaHistory(parsed.map((e) => ({ ...e, expanded: false })));
+      } else {
+        setQaHistory([]);
       }
-    } catch { /* ignore */ }
-    return [];
-  });
-  const [qaError, setQaError] = useState<string | null>(null);
+    } catch {
+      setQaHistory([]);
+    }
+    // Mark as initialized after state update
+    setTimeout(() => { qaInitialized.current = true; }, 0);
+  }, [qaStorageKey]);
 
+  // Save Q&A history only after initialized
   useEffect(() => {
+    if (!qaInitialized.current) return;
     try {
       sessionStorage.setItem(qaStorageKey, JSON.stringify(qaHistory));
     } catch { /* ignore */ }

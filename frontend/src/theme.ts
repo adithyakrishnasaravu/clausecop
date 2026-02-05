@@ -23,7 +23,7 @@ const theme = createTheme({
     divider: "rgba(255,255,255,0.08)",
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Space Grotesk", "Inter", "Roboto", "Helvetica", "Arial", sans-serif',
     h4: { fontWeight: 700, color: "#fff" },
     h5: { fontWeight: 600, color: "#fff" },
     h6: { fontWeight: 600, color: "#fff" },

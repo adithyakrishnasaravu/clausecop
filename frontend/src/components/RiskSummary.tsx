@@ -156,7 +156,7 @@ export default function RiskSummary({ summary }: Props) {
                       <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
                         <Typography variant="subtitle2" fontWeight={700}>
                           {risk.section_number
-                            ? `§${risk.section_number}`
+                            ? `${risk.section_number}`
                             : `#${risk.clause_index + 1}`}{" "}
                           {risk.title ?? "Untitled"}
                         </Typography>
@@ -204,7 +204,7 @@ export default function RiskSummary({ summary }: Props) {
                       primary={
                         <Typography variant="subtitle2" fontWeight={600}>
                           {clause.section_number
-                            ? `§${clause.section_number}`
+                            ? `${clause.section_number}`
                             : `#${clause.clause_index + 1}`}{" "}
                           {clause.title ?? "Untitled"}
                         </Typography>

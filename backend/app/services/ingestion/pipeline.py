@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from typing import Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session, select, text
 
 from app.db.models import Clause, Document, RiskAssessment
 from app.services.ingestion.unstructured_client import partition_pdf
@@ -23,6 +24,28 @@ from app.services.risk.scorer import compute_risk_score
 log = logging.getLogger(__name__)
 
 _progress_lock = threading.Lock()
+
+
+def _update_progress(doc_id: int, clauses_done: int) -> None:
+    """Write progress using raw SQL to avoid session conflicts."""
+    from app.db.session import engine
+
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            with _progress_lock:
+                with engine.connect() as conn:
+                    conn.execute(
+                        text("UPDATE document SET clauses_done = :done WHERE id = :id"),
+                        {"done": clauses_done, "id": doc_id}
+                    )
+                    conn.commit()
+            return
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(0.2 * (attempt + 1))
+            else:
+                log.warning("Progress update failed for doc %d: %s", doc_id, e)
 
 
 @dataclass
@@ -67,19 +90,6 @@ def _analyze_clause_pure(
         document_id=document_id,
         project_id=project_id,
     )
-
-
-def _update_progress(doc_id: int, clauses_done: int) -> None:
-    """Write progress to DB using a dedicated short-lived session."""
-    from app.db.session import engine
-
-    with _progress_lock:
-        with Session(engine) as session:
-            doc = session.get(Document, doc_id)
-            if doc:
-                doc.clauses_done = clauses_done
-                session.add(doc)
-                session.commit()
 
 
 def process_doc_background(doc_id: int) -> None:
@@ -175,7 +185,9 @@ def process_doc(doc_id: int, session: Session) -> None:
                 if result is not None:
                     analyses.append(result)
                 done_count += 1
-                _update_progress(doc_id, done_count)
+                # Update progress every 3 clauses or at the end to reduce DB writes
+                if done_count % 3 == 0 or done_count == len(clauses):
+                    _update_progress(doc_id, done_count)
 
         # --- Persist all clause updates + RiskAssessments in one commit ---
         # Re-fetch clauses in current session to update them

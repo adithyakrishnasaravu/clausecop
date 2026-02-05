@@ -61,7 +61,7 @@ export default function ClausePage() {
       {/* Header */}
       <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 3, flexWrap: "wrap" }}>
         <Typography variant="h4">
-          {clause.section_number ? `§${clause.section_number}` : `Clause #${clause.clause_index + 1}`}
+          {clause.section_number ? `${clause.section_number}` : `Clause #${clause.clause_index + 1}`}
         </Typography>
         <Chip
           label={clause.category.replace(/_/g, " ")}
