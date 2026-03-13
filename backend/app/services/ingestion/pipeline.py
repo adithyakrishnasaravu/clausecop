@@ -13,7 +13,7 @@ from sqlmodel import Session, select, text
 from app.db.models import Clause, Document, RiskAssessment
 from app.services.ingestion.unstructured_client import partition_pdf
 from app.services.ingestion.unstructured_to_clauses import build_clause_drafts
-from app.services.llm.client import analyze_risk, classify_clause
+from app.services.llm.client import classify_and_analyze
 from app.services.retrieval.pinecone_index import (
     delete_by_document,
     generate_embeddings_batch,
@@ -65,27 +65,26 @@ class _ClauseAnalysis:
     project_id: Optional[int]
 
 
-def _analyze_clause_pure(
+def _analyze_clause_fast(
     clause_id: int,
     text: str,
     document_id: int,
     project_id: int | None,
 ) -> _ClauseAnalysis:
-    """Run classify + risk analysis + scoring. Pure function — no DB interaction."""
-    classification = classify_clause(text)
-    analysis = analyze_risk(text, classification.category)
-    signals_dict = analysis.signals.to_dict()
-    score, severity = compute_risk_score(classification.category, signals_dict)
+    """Run combined classify + risk analysis in ONE LLM call. Pure function."""
+    result = classify_and_analyze(text)
+    signals_dict = result.signals.to_dict()
+    score, severity = compute_risk_score(result.category, signals_dict)
     return _ClauseAnalysis(
         clause_id=clause_id,
-        category=classification.category,
-        confidence=classification.confidence,
+        category=result.category,
+        confidence=result.confidence,
         risk_score=score,
         severity=severity,
         signals_dict=signals_dict,
-        summary=analysis.summary,
-        recommendation=analysis.recommendation,
-        assessed_by=f"openai/{classification.category}",
+        summary=result.summary,
+        recommendation=result.recommendation,
+        assessed_by=f"openai/{result.category}",
         text=text,
         document_id=document_id,
         project_id=project_id,
@@ -103,19 +102,18 @@ def process_doc_background(doc_id: int) -> None:
 def process_doc(doc_id: int, session: Session) -> None:
     """
     Process a document end-to-end:
-    1. Parse PDF via Unstructured
-    2. Convert to ClauseDrafts
-    3. Store Clauses in DB
-    4. Classify each clause and run risk analysis (parallel)
-    5. Batch embed and upsert to Pinecone
-    6. Update document status
+    1. Parse PDF via Unstructured API
+    2. Store Clauses in DB
+    3. Classify + analyze each clause in ONE LLM call (parallel, 25 workers)
+    4. Batch embed and upsert to Pinecone
+    5. Update document status
     """
     document = session.exec(select(Document).where(Document.id == doc_id)).first()
     if not document:
         raise ValueError(f"Document {doc_id} not found")
 
     try:
-        # Make re-runs idempotent during dev — clear old clauses + assessments + vectors
+        # Make re-runs idempotent — clear old clauses + assessments + vectors
         try:
             delete_by_document(doc_id)
         except Exception:
@@ -131,7 +129,7 @@ def process_doc(doc_id: int, session: Session) -> None:
             session.delete(c)
         session.commit()
 
-        # --- Extraction ---
+        # --- Extraction via Unstructured API ---
         elements = partition_pdf(document.file_path, coordinates=False)
         clause_drafts = build_clause_drafts(elements)
 
@@ -160,14 +158,13 @@ def process_doc(doc_id: int, session: Session) -> None:
         session.add(document)
         session.commit()
 
-        # --- Phase 1: Parallel Risk Analysis ---
+        # --- Phase 1: Parallel Risk Analysis (25 workers, 1 LLM call per clause) ---
         analyses: list[_ClauseAnalysis] = []
         done_count = 0
 
         def _worker(clause: Clause) -> _ClauseAnalysis | None:
-            nonlocal done_count
             try:
-                result = _analyze_clause_pure(
+                result = _analyze_clause_fast(
                     clause_id=clause.id,
                     text=clause.text,
                     document_id=clause.document_id,
@@ -178,19 +175,18 @@ def process_doc(doc_id: int, session: Session) -> None:
                 log.exception("Risk analysis failed for clause %s", clause.id)
                 return None
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        with ThreadPoolExecutor(max_workers=25) as executor:
             futures = {executor.submit(_worker, c): c for c in clauses}
             for future in as_completed(futures):
                 result = future.result()
                 if result is not None:
                     analyses.append(result)
                 done_count += 1
-                # Update progress every 3 clauses or at the end to reduce DB writes
+                # Update progress every 3 clauses or at the end
                 if done_count % 3 == 0 or done_count == len(clauses):
                     _update_progress(doc_id, done_count)
 
         # --- Persist all clause updates + RiskAssessments in one commit ---
-        # Re-fetch clauses in current session to update them
         clause_map = {c.id: c for c in clauses}
         for analysis in analyses:
             clause = clause_map.get(analysis.clause_id)

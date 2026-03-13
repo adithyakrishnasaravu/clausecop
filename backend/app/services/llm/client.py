@@ -6,7 +6,8 @@ import logging
 from openai import OpenAI
 
 from app.core.config import settings
-from app.services.llm.prompts import CLASSIFY_SYSTEM, RISK_ANALYSIS_SYSTEM, VALID_CATEGORIES
+from app.services.llm.prompts import CLASSIFY_SYSTEM, RISK_ANALYSIS_SYSTEM, CLASSIFY_AND_ANALYZE_SYSTEM, VALID_CATEGORIES
+from dataclasses import dataclass
 from app.services.llm.schemas import ClassifyResult, RiskAnalysisResult, RiskSignals
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,58 @@ def analyze_risk(text: str, category: str) -> RiskAnalysisResult:
         severity = "medium"
 
     return RiskAnalysisResult(
+        signals=signals,
+        severity=severity,
+        summary=data.get("summary", ""),
+        recommendation=data.get("recommendation", ""),
+    )
+
+
+@dataclass
+class CombinedAnalysisResult:
+    """Combined classification + risk analysis result."""
+    category: str
+    confidence: float
+    signals: RiskSignals
+    severity: str
+    summary: str
+    recommendation: str
+
+
+def classify_and_analyze(text: str) -> CombinedAnalysisResult:
+    """Classify and analyze a clause in a single LLM call (2x faster)."""
+    raw = _chat(
+        model=settings.openai_model_reasoning,
+        system=CLASSIFY_AND_ANALYZE_SYSTEM,
+        user=text,
+    )
+
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        log.warning("classify_and_analyze: failed to parse JSON, raw=%s", raw)
+        return CombinedAnalysisResult(
+            category="other",
+            confidence=0.0,
+            signals=RiskSignals(),
+            severity="low",
+            summary="Unable to analyze this clause.",
+            recommendation="Review manually.",
+        )
+
+    category = data.get("category", "other").lower().strip()
+    if category not in VALID_CATEGORIES:
+        category = "other"
+
+    confidence = float(data.get("confidence", 0.0))
+    signals = RiskSignals.from_dict(data.get("signals", {}))
+    severity = data.get("severity", "low").lower().strip()
+    if severity not in ("low", "medium", "high", "critical"):
+        severity = "medium"
+
+    return CombinedAnalysisResult(
+        category=category,
+        confidence=min(max(confidence, 0.0), 1.0),
         signals=signals,
         severity=severity,
         summary=data.get("summary", ""),
